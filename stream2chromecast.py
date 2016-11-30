@@ -537,24 +537,67 @@ def playurl(url, device_name=None):
     
     print_ident()
 
-    url_parsed = urlparse.urlparse(url)
+    def get_resp(url):
+        url_parsed = urlparse.urlparse(url)
     
-    scheme = url_parsed.scheme
-    host = url_parsed.netloc
-    path = url.split(host, 1)[-1]
-    
-    conn = None
-    if scheme == "https":
-        conn = httplib.HTTPSConnection(host)
-    else:
-        conn = httplib.HTTPConnection(host)
+        scheme = url_parsed.scheme
+        host = url_parsed.netloc
+        path = url.split(host, 1)[-1]
         
-    conn.request("HEAD", path)
+        conn = None
+        if scheme == "https":
+            conn = httplib.HTTPSConnection(host)
+        else:
+            conn = httplib.HTTPConnection(host)
+        
+        conn.request("HEAD", path)
     
-    resp = conn.getresponse()
-    
+        resp = conn.getresponse()
+        return resp
+
+
+    def get_full_url(url, location):
+        url_parsed = urlparse.urlparse(url)
+
+        scheme = url_parsed.scheme
+        host = url_parsed.netloc
+
+        if location.startswith("/") is False:
+            path = url.split(host, 1)[-1] 
+            if path.endswith("/"):
+                path = path.rsplit("/", 2)[0]
+            else:
+                path = path.rsplit("/", 1)[0] + "/"
+            location = path + location
+
+        full_url = scheme + "://" + host + location
+
+        return full_url
+
+
+    resp = get_resp(url)
+
     if resp.status != 200:
-        sys.exit("HTTP error:" + str(resp.status) + " - " + resp.reason)
+        redirect_codes = [ 301, 302, 303, 307, 308 ]
+        if resp.status in redirect_codes:
+            redirects = 0
+            while resp.status in redirect_codes:
+                redirects += 1
+                if redirects > 9:
+                    sys.exit("HTTP Error: Too many redirects")
+                headers = resp.getheaders()
+                for header in headers:
+                    if len(header) > 1:
+                        if header[0].lower() == "location":
+                            redirect_location = header[1]
+                if redirect_location.startswith("http") is False:
+                    redirect_location = get_full_url(url, redirect_location)
+                print "Redirecting to " + redirect_location
+                resp = get_resp(redirect_location)
+            if resp.status != 200:
+                sys.exit("HTTP error:" + str(resp.status) + " - " + resp.reason)
+        else:
+            sys.exit("HTTP error:" + str(resp.status) + " - " + resp.reason)
         
     print "Found HTTP resource"
     
